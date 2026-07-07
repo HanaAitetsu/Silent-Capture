@@ -1,0 +1,77 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>講義用静止画カメラ</title>
+    <style>
+        body { margin: 0; background: #000; color: white; font-family: sans-serif; overflow: hidden; display: flex; flex-direction: column; align-items: center; justify-content: center; height: 100vh; }
+        #video { width: 100%; max-height: 80vh; object-fit: contain; }
+        .controls { padding: 20px; display: flex; gap: 20px; align-items: center; }
+        #shutter { width: 70px; height: 70px; background: white; border-radius: 50%; border: 5px solid #ccc; cursor: pointer; }
+        #shutter:active { background: #888; }
+        #preview { position: fixed; top: 10px; right: 10px; width: 80px; border: 2px solid white; display: none; }
+    </style>
+</head>
+<body>
+
+    <video id="video" autoplay playsinline></video>
+    <canvas id="canvas" style="display:none;"></canvas>
+    
+    <div class="controls">
+        <button id="shutter"></button>
+    </div>
+
+    <!-- 最後に撮った写真の確認用（タップで保存） -->
+    <img id="preview" alt="Preview">
+
+    <script>
+        const video = document.getElementById('video');
+        const canvas = document.getElementById('canvas');
+        const shutter = document.getElementById('shutter');
+        const preview = document.getElementById('preview');
+
+        // カメラの起動
+        async function initCamera() {
+            try {
+                const stream = await navigator.mediaDevices.getUserMedia({
+                    video: {
+                        facingMode: "environment", // 背面カメラ
+                        width: { ideal: 1920 },    // 板書用に高解像度を要求
+                        height: { ideal: 1080 }
+                    },
+                    audio: false
+                });
+                video.srcObject = stream;
+            } catch (err) {
+                alert("カメラの起動に失敗しました: " + err);
+            }
+        }
+
+        // シャッターを切る
+        shutter.addEventListener('click', () => {
+            const context = canvas.getContext('2d');
+            canvas.width = video.videoWidth;
+            canvas.height = video.videoHeight;
+            
+            // ビデオの現在のフレームをキャンバスに描画
+            context.drawImage(video, 0, 0, canvas.width, canvas.height);
+            
+            // 画像データ（Base64）に変換
+            const dataUrl = canvas.toDataURL('image/jpeg', 0.8);
+            
+            // プレビューに表示
+            preview.src = dataUrl;
+            preview.style.display = 'block';
+
+            // 自動保存（ブラウザの設定によってはダウンロード確認が出る）
+            const link = document.createElement('a');
+            link.href = dataUrl;
+            link.download = `lecture_${new Date().getTime()}.jpg`;
+            link.click();
+        });
+
+        initCamera();
+    </script>
+</body>
+</html>
