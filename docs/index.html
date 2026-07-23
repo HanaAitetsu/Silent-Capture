@@ -3,72 +3,197 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>講義用静止画カメラ</title>
+    <title>Lecture Camera</title>
     <style>
-        body { margin: 0; background: #000; color: white; font-family: sans-serif; overflow: hidden; display: flex; flex-direction: column; align-items: center; justify-content: center; height: 100vh; }
-        #video { width: 100%; max-height: 80vh; object-fit: contain; }
-        .controls { padding: 20px; display: flex; gap: 20px; align-items: center; }
-        #shutter { width: 70px; height: 70px; background: white; border-radius: 50%; border: 5px solid #ccc; cursor: pointer; }
-        #shutter:active { background: #888; }
-        #preview { position: fixed; top: 10px; right: 10px; width: 80px; border: 2px solid white; display: none; }
+        :root { --shutter-size: 75px; }
+        body { 
+            margin: 0; background: #000; color: white; 
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+            overflow: hidden; height: 100vh; width: 100vw;
+        }
+
+        /* メイン画面：カメラ */
+        .camera-view {
+            display: flex; flex-direction: column; height: 100%;
+        }
+        .video-container {
+            flex: 1; display: flex; align-items: center; justify-content: center; background: #000;
+        }
+        #video { width: 100%; height: 100%; object-fit: contain; }
+
+        /* 操作パネル */
+        .controls {
+            height: 150px; background: rgba(0,0,0,0.9);
+            display: flex; align-items: center; justify-content: space-around;
+            padding-bottom: env(safe-area-inset-bottom);
+        }
+
+        #shutter {
+            width: var(--shutter-size); height: var(--shutter-size);
+            background: white; border-radius: 50%; border: 5px solid #444;
+            cursor: pointer; transition: transform 0.1s;
+        }
+        #shutter:active { transform: scale(0.9); background: #ccc; }
+
+        /* サムネイル */
+        #thumbnail-container {
+            width: 55px; height: 55px; border-radius: 8px; overflow: hidden;
+            border: 1.5px solid rgba(255,255,255,0.5); background: #222;
+        }
+        #thumbnail { width: 100%; height: 100%; object-fit: cover; display: none; }
+
+        /* プレビュー画面（最初は隠す） */
+        #preview-overlay {
+            position: fixed; top: 0; left: 0; width: 100%; height: 100%;
+            background: #000; display: none; flex-direction: column; z-index: 100;
+        }
+        #full-image { flex: 1; object-fit: contain; width: 100%; }
+
+        /* プレビュー用のツールバー */
+        .preview-tools {
+            height: 100px; display: flex; align-items: center; justify-content: space-between;
+            padding: 0 30px; padding-bottom: env(safe-area-inset-bottom);
+            background: rgba(20,20,20,0.9);
+        }
+
+        .tool-btn { background: none; border: none; color: #007aff; font-size: 18px; cursor: pointer; }
+        
+        /* iOS共有アイコンの模倣 */
+        .share-icon {
+            width: 24px; height: 24px; border: 2px solid #007aff;
+            position: relative; display: inline-block;
+        }
+        .share-icon::before {
+            content: ''; position: absolute; top: -10px; left: 9px;
+            width: 2px; height: 12px; background: #007aff;
+        }
+        .share-icon::after {
+            content: ''; position: absolute; top: -10px; left: 5px;
+            width: 8px; height: 8px; border-top: 2px solid #007aff;
+            border-left: 2px solid #007aff; transform: rotate(45deg);
+        }
+
+        /* フラッシュ */
+        #flash {
+            position: fixed; top: 0; left: 0; width: 100%; height: 100%;
+            background: white; opacity: 0; pointer-events: none; z-index: 10;
+        }
+        .flash-active { animation: flash-anim 0.3s; }
+        @keyframes flash-anim { 0% { opacity: 0.8; } 100% { opacity: 0; } }
     </style>
 </head>
 <body>
 
-    <video id="video" autoplay playsinline></video>
-    <canvas id="canvas" style="display:none;"></canvas>
-    
-    <div class="controls">
-        <button id="shutter"></button>
+    <!-- カメラ画面 -->
+    <div class="camera-view">
+        <div id="flash"></div>
+        <div class="video-container">
+            <video id="video" autoplay playsinline></video>
+        </div>
+        <div class="controls">
+            <div id="thumbnail-container">
+                <img id="thumbnail">
+            </div>
+            <button id="shutter"></button>
+            <div style="width: 55px;"></div> <!-- レイアウト用 -->
+        </div>
     </div>
 
-    <!-- 最後に撮った写真の確認用（タップで保存） -->
-    <img id="preview" alt="Preview">
+    <!-- プレビュー画面（全画面） -->
+    <div id="preview-overlay">
+        <img id="full-image">
+        <div class="preview-tools">
+            <button class="tool-btn" id="close-preview">完了</button>
+            <button class="tool-btn" id="share-btn">
+                <div class="share-icon"></div>
+            </button>
+        </div>
+    </div>
+
+    <canvas id="canvas" style="display:none;"></canvas>
 
     <script>
         const video = document.getElementById('video');
         const canvas = document.getElementById('canvas');
         const shutter = document.getElementById('shutter');
-        const preview = document.getElementById('preview');
+        const thumbnail = document.getElementById('thumbnail');
+        const previewOverlay = document.getElementById('preview-overlay');
+        const fullImage = document.getElementById('full-image');
+        const closePreview = document.getElementById('close-preview');
+        const shareBtn = document.getElementById('share-btn');
+        const flash = document.getElementById('flash');
 
-        // カメラの起動
+        let currentBlob = null;
+
+        // カメラ設定
         async function initCamera() {
             try {
                 const stream = await navigator.mediaDevices.getUserMedia({
-                    video: {
-                        facingMode: "environment", // 背面カメラ
-                        width: { ideal: 1920 },    // 板書用に高解像度を要求
-                        height: { ideal: 1080 }
-                    },
+                    video: { facingMode: "environment", width: { ideal: 3840 }, height: { ideal: 2160 } },
                     audio: false
                 });
                 video.srcObject = stream;
             } catch (err) {
-                alert("カメラの起動に失敗しました: " + err);
+                alert("カメラの起動に失敗しました。");
             }
         }
 
-        // シャッターを切る
-        shutter.addEventListener('click', () => {
+        // 撮影処理
+        shutter.addEventListener('click', async () => {
+            // 視覚フィードバック
+            flash.classList.remove('flash-active');
+            void flash.offsetWidth;
+            flash.classList.add('flash-active');
+
             const context = canvas.getContext('2d');
             canvas.width = video.videoWidth;
             canvas.height = video.videoHeight;
-            
-            // ビデオの現在のフレームをキャンバスに描画
             context.drawImage(video, 0, 0, canvas.width, canvas.height);
             
-            // 画像データ（Base64）に変換
-            const dataUrl = canvas.toDataURL('image/jpeg', 0.8);
-            
-            // プレビューに表示
-            preview.src = dataUrl;
-            preview.style.display = 'block';
+            canvas.toBlob((blob) => {
+                currentBlob = blob;
+                const url = URL.createObjectURL(blob);
+                thumbnail.src = url;
+                thumbnail.style.display = 'block';
+                fullImage.src = url;
+            }, 'image/jpeg', 0.9);
+        });
 
-            // 自動保存（ブラウザの設定によってはダウンロード確認が出る）
-            const link = document.createElement('a');
-            link.href = dataUrl;
-            link.download = `lecture_${new Date().getTime()}.jpg`;
-            link.click();
+        // サムネイルクリックでプレビュー表示
+        document.getElementById('thumbnail-container').addEventListener('click', () => {
+            if (fullImage.src) {
+                previewOverlay.style.display = 'flex';
+            }
+        });
+
+        // プレビューを閉じる
+        closePreview.addEventListener('click', () => {
+            previewOverlay.style.display = 'none';
+        });
+
+        // iOS共有シートを呼び出す
+        shareBtn.addEventListener('click', async () => {
+            if (!currentBlob) return;
+
+            const file = new File([currentBlob], `board_${Date.now()}.jpg`, { type: "image/jpeg" });
+            
+            // Web Share APIが使えるか確認
+            if (navigator.canShare && navigator.canShare({ files: [file] })) {
+                try {
+                    await navigator.share({
+                        files: [file],
+                        title: '講義ボード',
+                    });
+                } catch (err) {
+                    if (err.name !== 'AbortError') alert("共有に失敗しました。");
+                }
+            } else {
+                // 非対応ブラウザの場合、直接画像を長押しして保存するよう促すか、ダウンロードを実行
+                const link = document.createElement('a');
+                link.href = fullImage.src;
+                link.download = file.name;
+                link.click();
+            }
         });
 
         initCamera();
