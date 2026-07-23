@@ -3,118 +3,98 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>Lecture Camera (iPad Optimized)</title>
+    <title>Fixed Camera</title>
     <style>
-        :root { 
-            --bar-height: 100px; /* ボタンエリアの高さを少し抑えて確実に収める */
-            --shutter-size: 65px;
-        }
-
-        * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
-
-        body { 
-            margin: 0; background: #000; color: white; 
-            font-family: -apple-system, sans-serif;
+        /* 画面全体のスクロールを完全に禁止 */
+        html, body {
+            margin: 0; padding: 0;
+            width: 100%; height: 100%;
             overflow: hidden; 
-            /* 画面の高さを厳密に指定 */
-            height: 100vh; height: 100dvh; 
-            display: flex;
-            flex-direction: column;
+            position: fixed; /* ボディを固定してスクロールを物理的に不可能にする */
+            background: #000;
         }
 
-        /* 1. ビデオ表示エリア：ここが重要 */
+        /* カメラ映像を画面全体に配置（下部のボタンに重なるように背景として置く） */
         .video-container {
-            flex: 1;          /* 余ったスペースを埋める */
-            min-height: 0;    /* ★重要：中身（ビデオ）が大きくてもこの要素自体は縮めるようにする */
-            position: relative;
-            background: #000;
+            position: absolute;
+            top: 0; left: 0;
+            width: 100%;
+            /* ボタンエリア(120px)を除いた範囲に映像を表示 */
+            height: calc(100% - 120px); 
             display: flex;
             align-items: center;
             justify-content: center;
         }
         
         #video {
-            width: 100%;
-            height: 100%;
-            object-fit: contain; /* 映像がどれだけ大きくても枠内に収める */
+            width: 100%; height: 100%;
+            object-fit: contain;
         }
 
-        /* 2. 下部操作パネル：高さを固定して死守する */
+        /* 操作パネルを「画面の底」に完全に固定 */
         .controls {
-            height: var(--bar-height);
-            min-height: var(--bar-height); /* 強制的に高さを確保 */
-            background: #1a1a1a;
+            position: absolute;
+            bottom: 0; left: 0;
+            width: 100%;
+            height: 120px; /* 固定高 */
+            background: rgba(15, 15, 15, 0.9);
             display: flex;
             align-items: center;
             justify-content: space-around;
-            padding-bottom: env(safe-area-inset-bottom);
-            border-top: 1px solid #333;
-            z-index: 20;
+            padding-bottom: env(safe-area-inset-bottom); /* iPadのバー対策 */
+            z-index: 100;
         }
 
         #shutter {
-            width: var(--shutter-size);
-            height: var(--shutter-size);
+            width: 75px; height: 75px;
             background: white;
             border-radius: 50%;
-            border: 4px solid #888;
+            border: 5px solid #555;
             cursor: pointer;
-            padding: 0;
+            -webkit-tap-highlight-color: transparent;
         }
-        #shutter:active { background: #bbb; transform: scale(0.92); }
+        #shutter:active { background: #ccc; transform: scale(0.95); }
 
         #thumb-box {
-            width: 50px; height: 50px;
-            border-radius: 4px;
-            background: #333;
-            overflow: hidden;
+            width: 55px; height: 55px;
+            background: #333; border-radius: 4px; overflow: hidden;
             border: 1px solid #666;
         }
         #thumbnail { width: 100%; height: 100%; object-fit: cover; display: none; }
 
-        /* プレビュー画面 */
+        /* プレビュー表示 */
         #preview-overlay {
-            position: fixed;
-            inset: 0;
-            background: #000;
-            display: none;
-            flex-direction: column;
-            z-index: 100;
+            position: fixed; inset: 0;
+            background: #000; display: none; flex-direction: column; z-index: 200;
         }
         #full-image { flex: 1; min-height: 0; object-fit: contain; }
-
         .preview-tools {
-            height: var(--bar-height);
-            display: flex;
-            align-items: center;
-            justify-content: space-between;
-            padding: 0 40px;
-            padding-bottom: env(safe-area-inset-bottom);
-            background: #111;
+            height: 100px; display: flex; align-items: center; justify-content: space-between;
+            padding: 0 40px; background: #111; padding-bottom: env(safe-area-inset-bottom);
         }
-
         .btn-text { color: #007aff; font-size: 18px; background: none; border: none; font-weight: bold; }
 
         #flash {
-            position: absolute; inset: 0; background: white; opacity: 0; pointer-events: none; z-index: 10;
+            position: fixed; inset: 0; background: white; opacity: 0; pointer-events: none; z-index: 150;
         }
         .flash-active { animation: flash-anim 0.2s; }
         @keyframes flash-anim { 0% { opacity: 0.6; } 100% { opacity: 0; } }
     </style>
 </head>
-<body>
+<body oncontextmenu="return false;"> <!-- 右クリックメニュー禁止（誤操作防止） -->
 
     <div class="video-container">
-        <div id="flash"></div>
         <video id="video" autoplay playsinline></video>
     </div>
+
+    <div id="flash"></div>
     
     <div class="controls">
         <div id="thumb-box">
             <img id="thumbnail">
         </div>
         <button id="shutter"></button>
-        <div style="width: 50px;"></div> 
+        <div style="width: 55px;"></div> 
     </div>
 
     <div id="preview-overlay">
@@ -140,16 +120,22 @@
 
         let currentBlob = null;
 
+        // スクロールをJSでも禁止（iPadのバウンド対策）
+        document.addEventListener('touchmove', (e) => {
+            if (e.touches.length > 1 || !previewOverlay.contains(e.target)) {
+                e.preventDefault();
+            }
+        }, { passive: false });
+
         async function initCamera() {
             try {
-                // iPadの広角・超広角など複数を考慮しつつ背面カメラを指定
                 const stream = await navigator.mediaDevices.getUserMedia({
                     video: { facingMode: "environment", width: { ideal: 3840 }, height: { ideal: 2160 } },
                     audio: false
                 });
                 video.srcObject = stream;
             } catch (err) {
-                alert("カメラにアクセスできません。設定を確認してください。");
+                alert("カメラの起動に失敗しました。Safariの設定でカメラを許可してください。");
             }
         }
 
@@ -182,13 +168,12 @@
 
         shareBtn.addEventListener('click', async () => {
             if (!currentBlob) return;
-            const file = new File([currentBlob], `shot_${Date.now()}.jpg`, { type: "image/jpeg" });
+            const file = new File([currentBlob], `board_${Date.now()}.jpg`, { type: "image/jpeg" });
             if (navigator.canShare && navigator.canShare({ files: [file] })) {
                 try {
                     await navigator.share({ files: [file] });
                 } catch (e) {}
             } else {
-                // 共有が使えない場合のバックアップ（画像表示）
                 window.open(fullImage.src, '_blank');
             }
         });
