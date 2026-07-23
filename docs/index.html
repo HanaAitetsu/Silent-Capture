@@ -5,106 +5,136 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <title>Lecture Camera</title>
     <style>
-        :root { --shutter-size: 75px; }
+        :root { 
+            --shutter-size: 70px; 
+            --bar-height: 120px;
+        }
+        
+        * { box-sizing: border-box; }
+
         body { 
             margin: 0; background: #000; color: white; 
-            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
-            overflow: hidden; height: 100vh; width: 100vw;
+            font-family: -apple-system, sans-serif;
+            overflow: hidden; 
+            /* dvh = 動的な画面の高さ（アドレスバーを除いた高さ） */
+            height: 100vh; height: 100dvh; 
+            display: flex; flex-direction: column;
         }
 
-        /* メイン画面：カメラ */
-        .camera-view {
-            display: flex; flex-direction: column; height: 100%;
-        }
+        /* カメラ表示エリア */
         .video-container {
-            flex: 1; display: flex; align-items: center; justify-content: center; background: #000;
+            flex: 1; /* 余ったスペースをすべて使う */
+            position: relative;
+            background: #000;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            overflow: hidden;
         }
-        #video { width: 100%; height: 100%; object-fit: contain; }
+        
+        #video {
+            width: 100%;
+            height: 100%;
+            object-fit: contain; /* 映像を歪ませず画面内に収める */
+        }
 
-        /* 操作パネル */
+        /* 下部操作パネル */
         .controls {
-            height: 150px; background: rgba(0,0,0,0.9);
-            display: flex; align-items: center; justify-content: space-around;
-            padding-bottom: env(safe-area-inset-bottom);
+            height: var(--bar-height);
+            flex-shrink: 0; /* 画面外に押し出されないように固定 */
+            background: rgba(20, 20, 20, 0.95);
+            display: flex;
+            align-items: center;
+            justify-content: space-around;
+            padding-bottom: env(safe-area-inset-bottom); /* iPhoneの下線バー対策 */
+            z-index: 10;
         }
 
+        /* シャッターボタン */
         #shutter {
-            width: var(--shutter-size); height: var(--shutter-size);
-            background: white; border-radius: 50%; border: 5px solid #444;
-            cursor: pointer; transition: transform 0.1s;
+            width: var(--shutter-size);
+            height: var(--shutter-size);
+            background: white;
+            border-radius: 50%;
+            border: 5px solid #444;
+            cursor: pointer;
+            padding: 0;
+            outline: none;
+            -webkit-tap-highlight-color: transparent;
         }
-        #shutter:active { transform: scale(0.9); background: #ccc; }
+        #shutter:active { background: #bbb; transform: scale(0.95); }
 
         /* サムネイル */
-        #thumbnail-container {
-            width: 55px; height: 55px; border-radius: 8px; overflow: hidden;
-            border: 1.5px solid rgba(255,255,255,0.5); background: #222;
+        #thumb-box {
+            width: 50px; height: 50px;
+            border-radius: 6px;
+            background: #333;
+            overflow: hidden;
+            border: 1px solid rgba(255,255,255,0.3);
         }
         #thumbnail { width: 100%; height: 100%; object-fit: cover; display: none; }
 
-        /* プレビュー画面（最初は隠す） */
+        /* プレビュー画面（オーバーレイ） */
         #preview-overlay {
-            position: fixed; top: 0; left: 0; width: 100%; height: 100%;
-            background: #000; display: none; flex-direction: column; z-index: 100;
+            position: fixed;
+            inset: 0; /* 全画面 */
+            background: #000;
+            display: none;
+            flex-direction: column;
+            z-index: 100;
         }
-        #full-image { flex: 1; object-fit: contain; width: 100%; }
+        #full-image { flex: 1; object-fit: contain; width: 100%; height: 100%; }
 
-        /* プレビュー用のツールバー */
         .preview-tools {
-            height: 100px; display: flex; align-items: center; justify-content: space-between;
-            padding: 0 30px; padding-bottom: env(safe-area-inset-bottom);
-            background: rgba(20,20,20,0.9);
+            height: var(--bar-height);
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 0 40px;
+            padding-bottom: env(safe-area-inset-bottom);
+            background: #111;
         }
 
-        .tool-btn { background: none; border: none; color: #007aff; font-size: 18px; cursor: pointer; }
+        .btn-text { color: #007aff; font-size: 17px; background: none; border: none; font-weight: 600; }
         
-        /* iOS共有アイコンの模倣 */
+        /* 共有ボタンのアイコン */
         .share-icon {
-            width: 24px; height: 24px; border: 2px solid #007aff;
-            position: relative; display: inline-block;
-        }
-        .share-icon::before {
-            content: ''; position: absolute; top: -10px; left: 9px;
-            width: 2px; height: 12px; background: #007aff;
+            width: 20px; height: 20px; border: 2px solid #007aff;
+            position: relative;
         }
         .share-icon::after {
-            content: ''; position: absolute; top: -10px; left: 5px;
-            width: 8px; height: 8px; border-top: 2px solid #007aff;
-            border-left: 2px solid #007aff; transform: rotate(45deg);
+            content: '↑'; position: absolute; top: -12px; left: 1px; width: 15px; color: #007aff; font-weight: bold; text-align: center;
         }
 
         /* フラッシュ */
         #flash {
-            position: fixed; top: 0; left: 0; width: 100%; height: 100%;
-            background: white; opacity: 0; pointer-events: none; z-index: 10;
+            position: absolute; inset: 0; background: white; opacity: 0; pointer-events: none; z-index: 5;
         }
-        .flash-active { animation: flash-anim 0.3s; }
-        @keyframes flash-anim { 0% { opacity: 0.8; } 100% { opacity: 0; } }
+        .flash-active { animation: flash-anim 0.2s; }
+        @keyframes flash-anim { 0% { opacity: 0.7; } 100% { opacity: 0; } }
     </style>
 </head>
 <body>
 
-    <!-- カメラ画面 -->
-    <div class="camera-view">
+    <div class="video-container">
         <div id="flash"></div>
-        <div class="video-container">
-            <video id="video" autoplay playsinline></video>
+        <video id="video" autoplay playsinline></video>
+    </div>
+    
+    <div class="controls">
+        <div id="thumb-box">
+            <img id="thumbnail">
         </div>
-        <div class="controls">
-            <div id="thumbnail-container">
-                <img id="thumbnail">
-            </div>
-            <button id="shutter"></button>
-            <div style="width: 55px;"></div> <!-- レイアウト用 -->
-        </div>
+        <button id="shutter"></button>
+        <div style="width: 50px;"></div> <!-- バランス用空要素 -->
     </div>
 
-    <!-- プレビュー画面（全画面） -->
+    <!-- プレビュー表示層 -->
     <div id="preview-overlay">
         <img id="full-image">
         <div class="preview-tools">
-            <button class="tool-btn" id="close-preview">完了</button>
-            <button class="tool-btn" id="share-btn">
+            <button class="btn-text" id="close-preview">完了</button>
+            <button class="btn-text" id="share-btn">
                 <div class="share-icon"></div>
             </button>
         </div>
@@ -125,7 +155,6 @@
 
         let currentBlob = null;
 
-        // カメラ設定
         async function initCamera() {
             try {
                 const stream = await navigator.mediaDevices.getUserMedia({
@@ -134,13 +163,11 @@
                 });
                 video.srcObject = stream;
             } catch (err) {
-                alert("カメラの起動に失敗しました。");
+                alert("カメラを起動できません。設定からブラウザのカメラ許可をオンにしてください。");
             }
         }
 
-        // 撮影処理
-        shutter.addEventListener('click', async () => {
-            // 視覚フィードバック
+        shutter.addEventListener('click', () => {
             flash.classList.remove('flash-active');
             void flash.offsetWidth;
             flash.classList.add('flash-active');
@@ -159,36 +186,22 @@
             }, 'image/jpeg', 0.9);
         });
 
-        // サムネイルクリックでプレビュー表示
-        document.getElementById('thumbnail-container').addEventListener('click', () => {
-            if (fullImage.src) {
-                previewOverlay.style.display = 'flex';
-            }
+        document.getElementById('thumb-box').addEventListener('click', () => {
+            if (fullImage.src) previewOverlay.style.display = 'flex';
         });
 
-        // プレビューを閉じる
         closePreview.addEventListener('click', () => {
             previewOverlay.style.display = 'none';
         });
 
-        // iOS共有シートを呼び出す
         shareBtn.addEventListener('click', async () => {
             if (!currentBlob) return;
-
             const file = new File([currentBlob], `board_${Date.now()}.jpg`, { type: "image/jpeg" });
-            
-            // Web Share APIが使えるか確認
             if (navigator.canShare && navigator.canShare({ files: [file] })) {
                 try {
-                    await navigator.share({
-                        files: [file],
-                        title: '講義ボード',
-                    });
-                } catch (err) {
-                    if (err.name !== 'AbortError') alert("共有に失敗しました。");
-                }
+                    await navigator.share({ files: [file] });
+                } catch (e) {}
             } else {
-                // 非対応ブラウザの場合、直接画像を長押しして保存するよう促すか、ダウンロードを実行
                 const link = document.createElement('a');
                 link.href = fullImage.src;
                 link.download = file.name;
